@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/u1234x1234/autograph2020/starting_kit/ingestion')
+# sys.path.append('/home/u1234x1234/autograph2020/starting_kit/ingestion')
 from starting_kit.ingestion.dataset import Dataset
 
 import os
