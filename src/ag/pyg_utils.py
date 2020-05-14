@@ -12,7 +12,6 @@ def generate_pyg_data(data):
         x = x.to_numpy()
         x = x.reshape(x.shape[0])
         x = np.array(pd.get_dummies(x))
-        raise ValueError('!!')
     else:
         x = x.drop('node_index', axis=1).to_numpy()
 

@@ -1,23 +1,38 @@
-import random
 import os
+import random
+from functools import partialmethod
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.nn import Linear
-from torch_geometric.nn import (ARMAConv, ChebConv, GCNConv, GINConv,
+from torch_geometric.nn import (ARMAConv, ChebConv, GCNConv, GINConv, SAGEConv,
                                 JumpingKnowledge, SGConv, SplineConv)
 
-# from uxils.functools_ext import partialclass
-
 from .pyg_utils import generate_pyg_data
+
+
+def partialclass(cls, *args, **kwargs):
+    class NewCls(cls):
+        __init__ = partialmethod(cls.__init__, *args, **kwargs)
+    NewCls.__name__ = f'{cls.__name__}[{kwargs}]'
+    return NewCls
+
 
 SEARCH_SPACE = {
     'conv_class': [
         GCNConv,
+        partialclass(GCNConv, improved=True),
+        partialclass(GCNConv, normalize=True),
+
+        partialclass(ChebConv, K=3),
+        partialclass(ChebConv, K=7),
+
+        # partialclass(SAGEConv, concat=True),
+        partialclass(SAGEConv, normalize=True),
     ],
-    'hidden_size': [32, 64],
+    'hidden_size': [64, 96],
     'num_layers': [2],
 }
 
@@ -73,7 +88,8 @@ class GCN(torch.nn.Module):
 
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
     def __repr__(self):
         return self.__class__.__name__
@@ -91,27 +107,33 @@ class Restorable:
 
 class PYGModel(Restorable):
 
-    def __init__(self, conv_class, hidden_size, num_layers):
+    def __init__(self, n_classes, input_size, conv_class, hidden_size, num_layers):
         self.conv_class = conv_class
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.device = torch.device('cuda')
 
         self.model = GCN(
-            features_num=data.x.size()[1], num_class=int(max(data.y)) + 1,
+            features_num=input_size, num_class=n_classes,
             num_layers=self.num_layers, conv_class=self.conv_class, hidden=self.hidden_size,
         )
         self.model = self.model.to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.005, weight_decay=5e-4)
 
-    def train(self, data):
+    def train(self, data, full=False):
         data = data.to(self.device)
 
+        n_iter = 600 if not full else 200
         min_loss = float('inf')
         self.model.train()
-        for epoch in range(1, 600):
+        for epoch in range(1, n_iter):
             self.optimizer.zero_grad()
-            loss = F.nll_loss(self.model(data)[data.train_mask], data.y[data.train_mask])
+            if full:
+                mask = data.train_mask + data.val_mask
+            else:
+                mask = data.train_mask
+
+            loss = F.cross_entropy(self.model(data)[mask], data.y[mask])
             loss.backward()
             self.optimizer.step()
 
@@ -126,12 +148,23 @@ class PYGModel(Restorable):
         self.model.eval()
         data = data.to(self.device)
         with torch.no_grad():
-            pred = self.model(data)[data.test_mask].max(1)[1]
-        return pred.cpu().numpy().flatten()
+            pred = self.model(data)[data.test_mask]
+        return pred.cpu().numpy()
 
-    def fit_predict(self, data):
+    def fit_predict(self, data, full=False):
 
-        score = self.train(data)
+        score = self.train(data, full=full)
         pred = self.predict(data)
 
         return pred, score
+
+
+def create_factory_method(n_classes, input_size):
+
+    def create_model(**config):
+        return PYGModel(
+            n_classes, input_size=input_size,
+            conv_class=config['conv_class'], hidden_size=config['hidden_size'],
+            num_layers=config['num_layers'])
+
+    return create_model
