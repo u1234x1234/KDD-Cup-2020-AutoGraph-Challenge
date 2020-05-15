@@ -53,21 +53,23 @@ WITH_EDGE_WEIGHTS = ['ChebConv', 'GCNConv']
 
 def with_edge_weights(conv_mod):
     for c in WITH_EDGE_WEIGHTS:
-        if c in str(type(conv_mod)):
+        if f'.{c}' in str(type(conv_mod)):
             return True
     return False
 
 
 class GCN(torch.nn.Module):
 
-    def __init__(self, *, conv_class, num_layers, hidden, features_num=32, num_class=2):
-        super(GCN, self).__init__()
+    def __init__(self, *, conv_class, num_layers, hidden, features_num=32, num_class=2, in_dropout=0, out_dropout=0):
+        super().__init__()
         self.conv1 = conv_class(features_num, hidden)
         self.convs = torch.nn.ModuleList()
         for i in range(num_layers - 1):
             self.convs.append(conv_class(hidden, hidden))
         self.lin2 = Linear(hidden, num_class)
         self.first_lin = Linear(features_num, hidden)
+        self.in_drop = torch.nn.Dropout(in_dropout)
+        self.out_drop = torch.nn.Dropout(out_dropout)
 
     def reset_parameters(self):
         self.first_lin.reset_parameters()
@@ -79,16 +81,15 @@ class GCN(torch.nn.Module):
     def forward(self, data):
         x, edge_index, edge_weight = data.x, data.edge_index, data.edge_weight
         x = F.relu(self.first_lin(x))
-        x = F.dropout(x, p=0.8, training=self.training)
+        x = self.in_drop(x)
         for conv in self.convs:
             if with_edge_weights(conv):
                 x = F.relu(conv(x, edge_index, edge_weight=edge_weight))
             else:
                 x = F.relu(conv(x, edge_index))
 
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.out_drop(x)
         x = self.lin2(x)
-        # return F.log_softmax(x, dim=-1)
         return x
 
     def __repr__(self):
@@ -107,26 +108,26 @@ class Restorable:
 
 class PYGModel(Restorable):
 
-    def __init__(self, n_classes, input_size, conv_class, hidden_size, num_layers):
+    def __init__(self, n_classes, input_size, conv_class, hidden_size, num_layers, in_dropout, out_dropout, n_iter):
         self.conv_class = conv_class
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.device = torch.device('cuda')
+        self.n_iter = n_iter
 
         self.model = GCN(
             features_num=input_size, num_class=n_classes,
             num_layers=self.num_layers, conv_class=self.conv_class, hidden=self.hidden_size,
+            in_dropout=in_dropout, out_dropout=out_dropout,
         )
         self.model = self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.005, weight_decay=5e-4)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.003, weight_decay=5e-3)
 
     def train(self, data, full=False):
         data = data.to(self.device)
 
-        n_iter = 600 if not full else 200
-        min_loss = float('inf')
         self.model.train()
-        for epoch in range(1, n_iter):
+        for epoch in range(1, self.n_iter):
             self.optimizer.zero_grad()
             if full:
                 mask = data.train_mask + data.val_mask
