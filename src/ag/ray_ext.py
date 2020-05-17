@@ -49,14 +49,14 @@ def _create_trainable(model_cls, metric, data_getter, seconds_per_step):
             y_pred, score = self.model.fit_predict(data)
             return {SCORE_NAME: score}
 
-        def _save(self, checkpoint_dir):
-            m_path = os.path.join(checkpoint_dir, "model")
-            os.makedirs(m_path, exist_ok=True)
-            self.model.save(m_path)
-            return m_path
+        # def _save(self, checkpoint_dir):
+        #     m_path = os.path.join(checkpoint_dir, "model")
+        #     os.makedirs(m_path, exist_ok=True)
+        #     self.model.save(m_path)
+        #     return m_path
 
-        def _restore(self, checkpoint_path):
-            self.model.restore(checkpoint_path)
+        # def _restore(self, checkpoint_path):
+        #     self.model.restore(checkpoint_path)
 
     return TimeBudgetedTrainable
 
@@ -315,11 +315,11 @@ class AsyncExecutor:
             raise self._worker_exc[1].with_traceback(self._worker_exc[2])
 
         trials = self.runner.get_trials()
-        try:
-            self.runner.checkpoint(force=True)
-        except Exception:
-            self.logger.exception("Trial Runner checkpointing failed.")
-        wait_for_sync()
+        # try:
+        #     self.runner.checkpoint(force=True)
+        # except Exception:
+        #     self.logger.exception("Trial Runner checkpointing failed.")
+        # wait_for_sync()
 
         completed_results = []
         n_incompleted = 0
@@ -374,7 +374,7 @@ def run_async_executor(trainable, config, time_budget,
             break
 
     while (time.time() - start_time) < time_budget:
-        time.sleep(1)
+        time.sleep(0.3)
         results, n_incompleted = executor.get_results()
 
         if n_incompleted == 0:

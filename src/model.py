@@ -37,16 +37,16 @@ class Model:
 
         import ray
         data_id = ray.put(data)
-        p_model.start(data_id, 100)
-
-        while (time.time() - start_time) < (time_budget - 20):
-            results, _ = p_model.executor.get_results()
-            if len(results) > 11:
+        ts = 30 if time_budget < 120 else 60
+        p_model.start(data_id, time_budget - ts)
+        while (time.time() - start_time) < (time_budget - ts):
+            results, n_inc = p_model.executor.get_results()
+            if n_inc == 0 and len(results) > 0:
                 break
         
-        print(results)
+        print('\n'.join([f'{x["config"]["conv_class"].__name__} {x}' for x in results]))
         p_model.stop()
-        predictions = p_model.predict(data, results)
+        predictions = p_model.predict(data, results, n_top=2)
         return predictions.argmax(axis=1)
 
     def __del__(self):

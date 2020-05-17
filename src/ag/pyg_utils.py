@@ -33,7 +33,7 @@ def generate_pyg_data(data):
 
     train_indices = data['train_indices']
     test_indices = data['test_indices']
-    train_indices, val_indices = train_test_split(train_indices, stratify=train_y, test_size=0.15)
+    train_indices, val_indices = train_test_split(train_indices, stratify=train_y, test_size=0.1)
 
     data = Data(x=x, edge_index=edge_index, y=y, edge_weight=edge_weight)
 

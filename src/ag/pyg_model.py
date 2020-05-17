@@ -7,9 +7,11 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.nn import Linear
-from torch_geometric.nn import (ARMAConv, ChebConv, GCNConv, GINConv, SAGEConv,
-                                JumpingKnowledge, SGConv, SplineConv)
-from torch_geometric.nn import SAGEConv, SplineConv, GraphConv, GravNetConv, GINConv, ARMAConv, SGConv, RGCNConv, FeaStConv, GATConv
+
+from torch_geometric.nn import (ARMAConv, ChebConv, FeaStConv, GATConv,
+                                GCNConv, GINConv, GraphConv, TAGConv,
+                                JumpingKnowledge, RGCNConv, SAGEConv, SGConv,
+                                SplineConv)
 
 from .pyg_utils import generate_pyg_data
 
@@ -23,18 +25,30 @@ def partialclass(cls, *args, **kwargs):
 
 SEARCH_SPACE = {
     'conv_class': [
-        GCNConv,
-        partialclass(GCNConv, improved=True),
+        # GCNConv,
+        # partialclass(GCNConv, improved=True),
         partialclass(GCNConv, normalize=True),
 
-        partialclass(ChebConv, K=3),
+        # partialclass(ChebConv, K=3),
         partialclass(ChebConv, K=7),
 
-        # partialclass(SAGEConv, concat=True),
-        partialclass(SAGEConv, normalize=True),
+        # partialclass(TAGConv, K=3),
+        partialclass(TAGConv, K=5),
+
+        partialclass(SGConv, K=2),
+        partialclass(ARMAConv, num_layers=3, num_stacks=2),
+        partialclass(GraphConv, aggr='mean'),
+
+        partialclass(SAGEConv),
+        # partialclass(SAGEConv, normalize=True),
     ],
-    'hidden_size': [64, 96],
-    'num_layers': [2],
+    'hidden_size': [32, 64],
+    'num_layers': [1],
+    'in_dropout': [0.5],
+    'out_dropout': [0.5],
+    'n_iter': [100, 300],
+    'weight_decay': [1e-3],
+    'learning_rate': [0.01, 0.001],
 }
 
 
@@ -46,11 +60,7 @@ def fix_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-# fix_seed(12345)
-
-
-WITH_EDGE_WEIGHTS = ['ChebConv', 'GCNConv']
-
+WITH_EDGE_WEIGHTS = ['ChebConv', 'GCNConv', 'SAGEConv', 'GraphConv', 'TAGConv', 'ARMAConv']
 
 
 def with_edge_weights(conv_mod):
@@ -64,24 +74,18 @@ class GCN(torch.nn.Module):
 
     def __init__(self, *, conv_class, num_layers, hidden, features_num=32, num_class=2, in_dropout=0, out_dropout=0):
         super().__init__()
-        # self.convs = torch.nn.ModuleList()
-        # for i in range(num_layers - 1):
-            # self.convs.append(conv_class(32, 64))
+        self.convs = torch.nn.ModuleList()
+        for i in range(num_layers):
+            self.convs.append(conv_class(hidden, hidden))
 
-        # self.lin2 = Linear(128, 64)
-        self.lin3 = Linear(100, num_class)
+        self.in_nn = Linear(features_num, hidden)
+        self.out_nn = Linear(hidden, num_class)
 
-        # self.lin2 = Linear(hidden, num_class)
-
-        self.first_lin = Linear(features_num, 32)
         self.in_drop = torch.nn.Dropout(in_dropout)
         self.out_drop = torch.nn.Dropout(out_dropout)
-        # self.bn = torch.nn.BatchNorm1d(64)
-        self.conv1 = ChebConv(32, 50, K=7)
-        self.conv2 = ARMAConv(32, 50, dropout=0.5, num_layers=2, num_stacks=2)
 
     def reset_parameters(self):
-        self.first_lin.reset_parameters()
+        self.in_nn.reset_parameters()
         self.conv1.reset_parameters()
         for conv in self.convs:
             conv.reset_parameters()
@@ -89,21 +93,20 @@ class GCN(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index, edge_weight = data.x, data.edge_index, data.edge_weight
-        x = F.relu(self.first_lin(x))
+
+        x = F.relu(self.in_nn(x))
         x = self.in_drop(x)
-        # for conv in self.convs:
-        #     if with_edge_weights(conv):
-        #         x = F.relu(conv(x, edge_index, edge_weight=edge_weight))
-        #     else:
-        #         x = F.relu(conv(x, edge_index))
-        x1 = F.relu(self.conv1(x, edge_index, edge_weight=edge_weight))
-        x2 = F.relu(self.conv2(x, edge_index))
 
-        x = torch.cat([x1, x2], dim=1)
+        for conv in self.convs:
+            if with_edge_weights(conv):
+                x = conv(x, edge_index, edge_weight=edge_weight)
+            else:
+                x = conv(x, edge_index)
 
-        # x = F.relu(self.lin2(x))
+            x = F.relu(x)
+
         x = self.out_drop(x)
-        x = self.lin3(x)
+        x = self.out_nn(x)
 
         return x
 
@@ -123,7 +126,8 @@ class Restorable:
 
 class PYGModel(Restorable):
 
-    def __init__(self, n_classes, input_size, conv_class, hidden_size, num_layers, in_dropout, out_dropout, n_iter):
+    def __init__(self, n_classes, input_size, conv_class, hidden_size, num_layers, in_dropout, out_dropout,
+                 n_iter, weight_decay, learning_rate):
         self.conv_class = conv_class
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -136,9 +140,9 @@ class PYGModel(Restorable):
             in_dropout=in_dropout, out_dropout=out_dropout,
         )
         self.model = self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.005, weight_decay=1e-3)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    def train(self, data, full=False, m=None):
+    def train(self, data, full=False):
         data = data.to(self.device)
 
         self.model.train()
@@ -153,14 +157,13 @@ class PYGModel(Restorable):
             loss.backward()
             self.optimizer.step()
 
-        print(mask.sum())
         with torch.no_grad():
             self.model.eval()
-            y_pred_val = self.model(data).cpu().numpy()
-        # y_val_true = data.y[data.val_mask].cpu().numpy()
-        # val_acc = (y_pred_val == y_val_true).mean()
+            y_pred_val = self.model(data)[data.val_mask].cpu().numpy().argmax(axis=1)
 
-        return y_pred_val
+        y_val_true = data.y[data.val_mask].cpu().numpy()
+        val_acc = (y_pred_val == y_val_true).mean()
+        return val_acc
 
     def predict(self, data):
         self.model.eval()
@@ -169,11 +172,9 @@ class PYGModel(Restorable):
             pred = self.model(data)[data.test_mask]
         return pred.cpu().numpy()
 
-    def fit_predict(self, data, full=False, m=None):
-
-        score = self.train(data, full=full, m=m)
+    def fit_predict(self, data, full=False):
+        score = self.train(data, full=full)
         pred = self.predict(data)
-
         return pred, score
 
 
@@ -183,6 +184,8 @@ def create_factory_method(n_classes, input_size):
         return PYGModel(
             n_classes, input_size=input_size,
             conv_class=config['conv_class'], hidden_size=config['hidden_size'],
-            num_layers=config['num_layers'])
+            num_layers=config['num_layers'], in_dropout=config['in_dropout'], out_dropout=config['out_dropout'],
+            n_iter=config['n_iter'], weight_decay=config['weight_decay'], learning_rate=config['learning_rate']
+            )
 
     return create_model

@@ -22,7 +22,7 @@ def _make_predictions(base_class, config, checkpoint_path, X, trainset=None, n_s
     they are fused due to efficiency considerations.
     """
     model = base_class(**config)
-    model.restore(checkpoint_path)
+    # model.restore(checkpoint_path)
     y_pred, score = model.fit_predict(X, full=True)
     return y_pred
 
@@ -65,18 +65,15 @@ class ParametricFamilyModel:
             scheduler=scheduler,
             search_alg=search_alg,
             checkpoint_at_end=False,
-            checkpoint_freq=1,
+            checkpoint_freq=0,
         )
 
     def predict(self, data_id, results, n_top=1, refit_seconds=30):
-        # results, n_incompleted = self.executor.get_results()
-        # if len(results) == 0:
-            # return None
         results = list(sorted(results, key=lambda x: -x[SCORE_NAME]))
 
         to_predict = []
         for info in results[:n_top]:
-            print(info)
+            print(info['config']['conv_class'].__name__, info['config'])
             checkpoint_path = os.path.join(
                 info['logdir'], f"checkpoint_{info[STEP_NAME]}/model")
             to_predict.append((info['config'], checkpoint_path))
