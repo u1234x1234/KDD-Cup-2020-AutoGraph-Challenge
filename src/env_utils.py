@@ -23,6 +23,7 @@ def prepare_env():
     install_pip_package(f'torch-cluster==latest+cu100 -f https://pytorch-geometric.com/whl/torch-1.4.0.html')
     install_pip_package(f'-U torch-geometric')
     install_pip_package(f'ray[tune]')
+    install_pip_package(f'zstandard')
 
     install_pip_package(f'{dn}/')
     return dn

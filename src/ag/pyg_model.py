@@ -14,6 +14,7 @@ from torch_geometric.nn import (ARMAConv, ChebConv, FeaStConv, GATConv,
                                 SplineConv)
 
 from .pyg_utils import generate_pyg_data
+from itertools import product
 
 
 def partialclass(cls, *args, **kwargs):
@@ -27,29 +28,50 @@ SEARCH_SPACE = {
     'conv_class': [
         # GCNConv,
         # partialclass(GCNConv, improved=True),
-        partialclass(GCNConv, normalize=True),
+        # partialclass(GCNConv, normalize=True),
 
         # partialclass(ChebConv, K=3),
-        partialclass(ChebConv, K=7),
+        # partialclass(ChebConv, K=7),
 
         # partialclass(TAGConv, K=3),
-        partialclass(TAGConv, K=5),
+        # partialclass(TAGConv, K=5),
 
-        partialclass(SGConv, K=2),
-        partialclass(ARMAConv, num_layers=3, num_stacks=2),
-        partialclass(GraphConv, aggr='mean'),
+        # partialclass(SGConv, K=2),
+        # partialclass(ARMAConv, num_layers=3, num_stacks=2),
+        # partialclass(GraphConv, aggr='mean'),
 
-        partialclass(SAGEConv),
-        # partialclass(SAGEConv, normalize=True),
+        # partialclass(SAGEConv),
+        partialclass(SAGEConv, normalize=True),
     ],
-    'hidden_size': [32, 64],
-    'num_layers': [1],
-    'in_dropout': [0.5],
-    'out_dropout': [0.5],
-    'n_iter': [100, 300],
-    'weight_decay': [1e-3],
-    'learning_rate': [0.01, 0.001],
+    'hidden_size': [96],
+    'num_layers': [2],
+    'in_dropout': [0.7],
+    'out_dropout': [0.7],
+    'n_iter': [500],
+    'weight_decay': [0.001],
+    'learning_rate': [0.01],
 }
+
+# SEARCH_SPACE_FLAT = [dict(zip(SEARCH_SPACE.keys(), x)) for x in product(*SEARCH_SPACE.values())]
+# np.random.shuffle(SEARCH_SPACE_FLAT)
+
+
+def bc(**kwargs):
+    base = {
+        'in_dropout': 0.5,
+        'out_dropout': 0.5,
+        'weight_decay': 0.001,
+    }
+    base.update(**kwargs)
+    return base
+
+
+SEARCH_SPACE_FLAT = [
+    bc(conv_class=partialclass(TAGConv, K=5), hidden_size=64, num_layers=1, n_iter=100, learning_rate=0.001),
+    bc(conv_class=partialclass(SGConv, K=2), hidden_size=32, num_layers=1, n_iter=100, learning_rate=0.001),
+    bc(conv_class=partialclass(SAGEConv, normalize=True), hidden_size=96, num_layers=2, n_iter=500, learning_rate=0.01, weight_decay=0),
+    bc(conv_class=partialclass(GraphConv, aggr='mean'), hidden_size=64, num_layers=1, n_iter=100, learning_rate=0.01),
+]
 
 
 def fix_seed(seed):
@@ -114,75 +136,102 @@ class GCN(torch.nn.Module):
         return self.__class__.__name__
 
 
-class Restorable:
-    def save(self, path):
-        torch.save(self.model.state_dict(), os.path.join(path, 'model.pt'))
-        torch.save(self.optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
+class PYGModel:
 
-    def restore(self, path):
-        self.model.load_state_dict(torch.load(os.path.join(path, 'model.pt')))
-        self.optimizer.load_state_dict(torch.load(os.path.join(path, 'optimizer.pt')))
-
-
-class PYGModel(Restorable):
-
-    def __init__(self, n_classes, input_size, conv_class, hidden_size, num_layers, in_dropout, out_dropout,
+    def __init__(self, n_classes, conv_class, hidden_size, num_layers, in_dropout, out_dropout,
                  n_iter, weight_decay, learning_rate):
         self.conv_class = conv_class
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.device = torch.device('cuda')
         self.n_iter = n_iter
+        self.n_classes = n_classes
+        self.in_dropout = in_dropout
+        self.out_dropout = out_dropout
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.model = None
 
-        self.model = GCN(
-            features_num=input_size, num_class=n_classes,
-            num_layers=self.num_layers, conv_class=self.conv_class, hidden=self.hidden_size,
-            in_dropout=in_dropout, out_dropout=out_dropout,
-        )
-        self.model = self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-
-    def train(self, data, full=False):
-        data = data.to(self.device)
+    def train(self, data, mask):
+        if self.model is None:
+            input_size = data.x.shape[1]
+            self.model = GCN(
+                features_num=input_size, num_class=self.n_classes,
+                num_layers=self.num_layers, conv_class=self.conv_class, hidden=self.hidden_size,
+                in_dropout=self.in_dropout, out_dropout=self.out_dropout)
+            self.model = self.model.to(self.device)
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+            # import torchcontrib
+            # self.optimizer = torchcontrib.optim.SWA(self.optimizer)
 
         self.model.train()
-        for epoch in range(1, self.n_iter):
+        val_accs = []
+        for epoch_idx in range(self.n_iter):
+            self.model.train()
             self.optimizer.zero_grad()
-            if full:
-                mask = data.train_mask + data.val_mask
-            else:
-                mask = data.train_mask
-
-            loss = F.cross_entropy(self.model(data)[mask], data.y[mask])
+            out = self.model(data)
+            loss = F.cross_entropy(out[mask], data.y[mask])
             loss.backward()
             self.optimizer.step()
 
-        with torch.no_grad():
-            self.model.eval()
-            y_pred_val = self.model(data)[data.val_mask].cpu().numpy().argmax(axis=1)
+            if epoch_idx > 50 and epoch_idx % 10 == 0:
+                p = self.predict(data, mask=data.val_mask).max(1)[1]
+                acc = (p == data.y[data.val_mask]).sum().cpu().numpy() / len(p)
+                val_accs.append(acc)
+                # if np.max(val_accs) != np.max(val_accs[-5:]):  # no impr in last steps
+                    # break
 
-        y_val_true = data.y[data.val_mask].cpu().numpy()
-        val_acc = (y_pred_val == y_val_true).mean()
-        return val_acc
+            # if epoch_idx > 100 and epoch_idx % 10 == 0:
+                # self.optimizer.update_swa()
+        # self.optimizer.swap_swa_sgd()
 
-    def predict(self, data):
+        return np.mean(val_accs[-3:])
+
+    def predict(self, data, mask=None):
         self.model.eval()
-        data = data.to(self.device)
         with torch.no_grad():
-            pred = self.model(data)[data.test_mask]
-        return pred.cpu().numpy()
+            pred = self.model(data)
+            if mask is not None:
+                pred = pred[mask]
+        return pred
 
-    def fit_predict(self, data, full=False):
-        score = self.train(data, full=full)
-        pred = self.predict(data)
+    def fit_predict(self, data):
+        data = data.to(self.device)
+
+        score = self.train(data, mask=data.train_mask)
+        self.n_iter = 10
+        self.train(data, mask=data.train_mask + data.val_mask)
+        pred = self.predict(data, mask=data.test_mask)
+        self.n_iter = 1
+        for i in range(10):
+            self.train(data, mask=data.train_mask + data.val_mask)
+            pred += self.predict(data, mask=data.test_mask)
+        pred /= 11
+
+        pred = pred.cpu().numpy()
+
+        # t_pred = self.predict(data, mask=None)
+        # t_pred = F.softmax(t_pred, dim=1).cpu().numpy()
+        # test_mask = ~(data.train_mask + data.val_mask).cpu().numpy()
+        # perc = np.percentile(t_pred[test_mask].max(axis=1), 15)
+        # nmask = ((t_pred * test_mask[:, np.newaxis]).max(axis=1) > perc)
+        # nmask = torch.tensor(nmask, dtype=torch.bool).cuda()
+        # data.train_mask += nmask
+        # data.y[test_mask] = torch.tensor(t_pred[test_mask].argmax(axis=1), dtype=torch.long).cuda()
+
+        # self.n_iter = 5
+        # self.train(data, mask=data.train_mask+data.val_mask)
+        # pred1 = self.predict(data, mask=data.test_mask).cpu().numpy()
+        # pred = (pred + pred1) / 3
+
         return pred, score
 
 
-def create_factory_method(n_classes, input_size):
+def create_factory_method(n_classes):
 
     def create_model(**config):
         return PYGModel(
-            n_classes, input_size=input_size,
+            n_classes,
             conv_class=config['conv_class'], hidden_size=config['hidden_size'],
             num_layers=config['num_layers'], in_dropout=config['in_dropout'], out_dropout=config['out_dropout'],
             n_iter=config['n_iter'], weight_decay=config['weight_decay'], learning_rate=config['learning_rate']
