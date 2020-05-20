@@ -4,8 +4,6 @@ import time
 import numpy as np
 from ag.system_ext import suppres_all_output
 from env_utils import prepare_env
-from functools import partial
-from sklearn.decomposition import PCA
 
 
 class Model:
@@ -30,31 +28,32 @@ class Model:
         from ag.pyg_utils import generate_pyg_data
 
         data = generate_pyg_data(data)
-        # x = data.x.numpy()
-        # x = PCA(n_components=1300).fit_transform(x)
-        # data.x = torch.tensor(x, dtype=torch.float32)
-
         print('DATAINFO', data, time_budget, n_class)
 
         base_class = create_factory_method(n_classes=n_class)
         n_edge = data.edge_index.shape[1]
-        p_model = Executor(3 if n_edge < 400000 else 1, base_class, data)
+        executor = Executor(3 if n_edge < 400000 else 1, (base_class, data))
         print('CONFIG', len(SEARCH_SPACE_FLAT))
 
         for config in SEARCH_SPACE_FLAT:
-            p_model.apply(config)
+
+            def func(base_class, data):
+                model = base_class(**config)
+                y_pred, score = model.fit_predict(data)
+                return y_pred, score
+
+            name = f'{config["conv_class"].__name__} {config}'
+            executor.apply(func, name)
 
         results = []
         while (len(results) != len(SEARCH_SPACE_FLAT)) and ((time.time() - start_time) < (time_budget - 4)):
-            r = p_model.get(timeout=2)
+            r = executor.get(timeout=2)
             if r is not None:
                 results.append(r)
+                sresults = list(sorted(results, key=lambda x: -x[1][1]))
 
-                sresults = list(sorted(results, key=lambda x: -x[0][1]))
-                print([r[0][1] for r in sresults[:3]], len(results))
-
-        print('\n'.join([f'{r[0][1]} {r[1]["conv_class"].__name__}' for r in sresults]))
-        predictions = np.array([r[0][0] for r in sresults[:2] if r[0][1] > sresults[0][0][1] - 0.02])
+        print('\n'.join([f'{r[0]} {r[1][1]}' for r in sresults]))
+        predictions = np.array([r[1][0] for r in sresults[:2] if r[1][1] > sresults[0][1][1] - 0.02])
         print(predictions.shape)
 
         from scipy.stats import gmean

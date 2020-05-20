@@ -1,74 +1,70 @@
 import copy
-
+import uuid
 import cloudpickle
 import ray
 import zstandard
 
-TASK_QUEUE_NAME = 'UX_TASK_QUEUE'
-RESULTS_QUEUE_NAME = 'UX_RESULTS_QUEUE'
-
-
-def compress_zstd(value):
-    return zstandard.ZstdCompressor().compress(value)
-
-
-def decompress_zstd(value):
-    return zstandard.ZstdDecompressor().decompress(value)
+TASK_QUEUE_KEY = 'UXILS_TASK_QUEUE'
+RESULTS_QUEUE_KEY = 'UXILS_RESULTS_QUEUE'
+DATA_KEY = 'UXILS_DATA'
 
 
 def serialize(value):
-    return compress_zstd(cloudpickle.dumps(value))
+    return zstandard.ZstdCompressor().compress(cloudpickle.dumps(value))
 
 
 def deserialize(value):
-    return cloudpickle.loads(decompress_zstd(value))
+    return cloudpickle.loads(zstandard.ZstdDecompressor().decompress(value))
 
 
-def worker(name):
-    print(f'Worker "{name}" started.')
+def worker(name, verbose=1):
     client = ray.worker.global_worker.redis_client
-    base_class = client.get('BASE_CLASS')
-    data = client.get('DATA')
-    print(len(base_class), len(data))
-    base_class = deserialize(base_class)
-    data = deserialize(data)
+    data = client.get(DATA_KEY)
+    if verbose:
+        print(f'Worker "{name}" data: {len(data)}')
 
     while True:
-        config = client.blpop(TASK_QUEUE_NAME)[1]
-        if config is None:
+        task = client.blpop(TASK_QUEUE_KEY)[1]
+        if task is None:
             break
-        config = deserialize(config)
+        task = deserialize(task)
 
-        model = base_class(**config)
-        result = model.fit_predict(copy.deepcopy(data))
+        name, task = task
+        result = task(*deserialize(data))
 
-        result = serialize((result, config))
-        client.rpush(RESULTS_QUEUE_NAME, result)
+        client.rpush(RESULTS_QUEUE_KEY, serialize((name, result)))
 
 
 class Executor:
-    def __init__(self, n_workers, base_class, data):
+    def __init__(self, n_workers, *args, gpu_per_trial=0):
         self._workers = []
         self._r_client = ray.worker.global_worker.redis_client
-        base_class = serialize(base_class)
-        data = serialize(data)
-
-        self._r_client.set('BASE_CLASS', base_class)
-        self._r_client.set('DATA', data)
+        self._r_client.set(DATA_KEY, serialize(args))
 
         for worker_id in range(n_workers):
-            w_id = ray.remote(num_cpus=1, num_gpus=0.3)(worker).remote(f'worker_{worker_id}')
+            w_id = ray.remote(num_cpus=1, num_gpus=gpu_per_trial)(worker).remote(f'worker_{worker_id}')
             self._workers.append(w_id)
 
-    def apply(self, func):
-        fs = serialize(func)
-        self._r_client.rpush(TASK_QUEUE_NAME, fs)
+    def apply(self, func, name=None):
+        if name is None:
+            name = str(uuid.uuid4())
+
+        fs = serialize((name, func))
+        self._r_client.rpush(TASK_QUEUE_KEY, fs)
 
     def get(self, timeout=None):
-        r = self._r_client.blpop(RESULTS_QUEUE_NAME, timeout=timeout)
+        r = self._r_client.blpop(RESULTS_QUEUE_KEY, timeout=timeout)
         if r is not None:
             return deserialize(r[1])
 
-    def stop(self):
+    def stop(self, force=True):
+        for _ in range(len(self._workers)):
+            self._r_client.lpush(TASK_QUEUE_KEY, serialize(None))
+
+        if not force:
+            raise NotImplementedError
+
         for w_id in self._workers:
             ray.cancel(w_id, force=True)
+        for key in [TASK_QUEUE_KEY, RESULTS_QUEUE_KEY, DATA_KEY]:
+            self._r_client.delete(key)
