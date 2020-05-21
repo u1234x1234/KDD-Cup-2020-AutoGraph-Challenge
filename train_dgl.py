@@ -1,7 +1,8 @@
+import time
 import uuid
 from functools import partial
 from itertools import product
-import time
+
 import numpy as np
 # from torch_geometric.nn import TAGConv, SAGEConv, GraphConv, ChebConv
 import ray
@@ -9,67 +10,36 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dgl import DGLGraph
-from dgl.nn.pytorch import (AGNNConv, APPNPConv, ChebConv, GATConv, GINConv,
-                            GraphConv, SAGEConv, SGConv, TAGConv, EdgeConv, GatedGraphConv, GMMConv)
+from dgl.nn import pytorch as dgl_layers
 from torch.nn import Linear, ReLU, Sequential
 
+from ag.graph_net import GraphNet
 from ag.pyg_utils import generate_pyg_data
 from ag.worker_executor import Executor
 from data_utils import read_dataset
-# from torch_geometric.nn import (ARMAConv, ChebConv, FeaStConv, GATConv,
-#                                 GatedGraphConv, GCNConv, GINConv, GraphConv,
-#                                 GravNetConv, RGCNConv, SAGEConv, SGConv,
-#                                 SplineConv, TAGConv)
+from torch_geometric import nn as pyg_layers
 from torch_geometric.utils import dropout_adj, to_networkx
 from uxils.serialization import dump
 from uxils.timer import Timer
+from uxils.torch_ext import (available_activations, available_optimizers,
+                             init_optimizer)
 
-
-class GraphNet(nn.Module):
-    def __init__(self, input_size, n_classes, conv_class, in_dropout, out_dropout, n_hidden, n_layers, activation):
-        super().__init__()
-
-        self.layers = nn.ModuleList()
-        self.in_nn = nn.Linear(input_size, n_hidden)
-
-        for _ in range(n_layers):
-            if 'GINConv' in conv_class.func.__name__:
-                self.layers.append(GINConv(
-                    nn.Sequential(nn.Dropout(0.5), nn.Linear(n_hidden, n_hidden), nn.ReLU()),
-                    'mean'))
-            else:
-                self.layers.append(conv_class(n_hidden, n_hidden))
-
-        self.out_nn = nn.Linear(n_hidden, n_classes)
-        self.in_dropout = nn.Dropout(in_dropout)
-        self.out_dropout = nn.Dropout(out_dropout)
-        self.activation = activation()
-
-    def forward(self, x, g, data):
-        x = self.in_nn(x)
-        x = self.activation(x)
-        x = self.in_dropout(x)
-
-        for layer in self.layers:
-            x = layer(g, x)
-            # x = layer(x, data.edge_index)
-            x = self.activation(x).squeeze()  # GAT num heads (b, H, d)
-
-        x = self.out_dropout(x)
-        x = self.out_nn(x)
-        return x
+from uxils.system import suppres_all_output
 
 
 while True:
 
-    task = np.random.choice(['a', 'b', 'c', 'd', 'e'])
+    # task = np.random.choice(['a', 'b', 'c', 'd', 'e'])
+    task = 'a'
     dataset, y_test = read_dataset(task)
     n_classes = dataset.get_metadata()['n_class']
     gdata = generate_pyg_data(dataset.get_data())
     input_size = gdata.x.shape[1]
     g = DGLGraph(to_networkx(gdata))
+    # edges = g.reverse().all_edges()
+    # g.add_edges(*edges)
 
-    gpt = 0.3 if task in ['a', 'b', 'e'] else 1
+    gpt = 0.25 if task in ['a', 'b', 'e'] else 1
 
     # degs = g.in_degrees().float()
     # norm = torch.pow(degs, -0.5)
@@ -84,7 +54,7 @@ while True:
             n_hidden=config['hidden_size'], activation=config['activation']
             ).cuda()
         loss_fcn = torch.nn.CrossEntropyLoss()
-        optimizer = config['optimizer'](model.parameters(), lr=config['lr'], weight_decay=config['wd'])
+        optimizer = init_optimizer(config['optimizer'])(model.parameters(), lr=config['lr'], weight_decay=config['wd'])
         data = gdata.to(torch.device('cuda'))
 
         start_time = time.time()
@@ -92,14 +62,15 @@ while True:
         for epoch in range(700+1):
             model.train()
             optimizer.zero_grad()
-            logits = model(data.x, g, data)
-            loss = loss_fcn(logits[data.train_mask], data.y[data.train_mask])
+            logits = model(g, data)
+            mask = data.train_mask + data.val_mask
+            loss = loss_fcn(logits[mask], data.y[mask])
             loss.backward()
             optimizer.step()
             if epoch in [100, 300, 500, 700]:
                 with torch.no_grad():
                     model.eval()
-                    out = model(data.x, g, data)[data.test_mask].max(1)[1].cpu().numpy()
+                    out = model(g, data)[data.test_mask].max(1)[1].cpu().numpy()
                     test_acc = (y_test.flatten() == out.flatten()).mean()
                     results.append((epoch, test_acc))
 
@@ -108,46 +79,55 @@ while True:
     ray.init(
         num_gpus=2, num_cpus=20, memory=2e10, object_store_memory=2e10,
         configure_logging=False, ignore_reinit_error=True,
-        log_to_driver=False,
+        log_to_driver=True,
         include_webui=False
     )
-    n = 2 if gpt == 1 else 6
+    n = 2 if gpt == 1 else 8
     executor = Executor(n, gpu_per_trial=gpt)
 
     search_space = {
         'conv_class': [
-            partial(GraphConv, norm='both'),
-            partial(GraphConv, norm='none'),
+            # partial(GraphConv, norm='both'),
+            # partial(GraphConv, norm='none'),
 
-            partial(TAGConv, k=1),
-            partial(TAGConv, k=2),
-            partial(TAGConv, k=4),
-            partial(TAGConv, k=7),
+            # partial(dgl_layers.TAGConv, k=1),
+            # partial(dgl_layers.TAGConv, k=3),
+            partial(dgl_layers.TAGConv, k=4),
+            # partial(pyg_layers.TAGConv, K=4, normalize=False),
+            # partial(dgl_layers.TAGConv, k=5),
 
-            partial(GATConv, num_heads=1),
+            # partial(GATConv, num_heads=1),
 
-            partial(EdgeConv, batch_norm=True),
-            partial(EdgeConv, batch_norm=False),
+            # partial(EdgeConv, batch_norm=True),
+            # partial(EdgeConv, batch_norm=False),
 
-            partial(SAGEConv, aggregator_type='mean'),
-            partial(SAGEConv, aggregator_type='gcn', feat_drop=0.5),
-            partial(SAGEConv, aggregator_type='gcn'),
+            # partial(SAGEConv, aggregator_type='mean'),
+            # partial(SAGEConv, aggregator_type='gcn', feat_drop=0.5),
+            # partial(SAGEConv, aggregator_type='gcn'),
 
-            partial(SGConv, k=1),
-            partial(SGConv, k=3),
-            partial(SGConv, k=5),
+            # partial(SGConv, k=1),
+            # partial(SGConv, k=3),
+            # partial(SGConv, k=5),
 
-            partial(GINConv, aggregator_type='sum'),
-            partial(GINConv, aggregator_type='mean'),
+            # partial(dgl_layers.GINConv, aggregator_type='sum'),
+            # partial(dgl_layers.GINConv, aggregator_type='mean'),
+
+            # partial(dgl_layers.GatedGraphConv, n_steps=2, n_etypes=1),
+            # partial(dgl_layers.ChebConv, k=7),
+            # partial(dgl_layers.AGNNConv, learn_beta=True),
+
+            # partial(dgl_layers.APPNPConv, k=10, alpha=0.1, edge_drop=0),
+            # partial(dgl_layers.APPNPConv, k=10, alpha=0.1, edge_drop=0.5),
+            # partial(dgl_layers.APPNPConv, k=10, alpha=0.5, edge_drop=0),
         ],
-        'n_layers': [1, 2],
-        'hidden_size': [32, 64, 96],
+        'n_layers': [2],
+        'hidden_size': [64, 96],
         'in_dropout': [0.5],
         'out_dropout': [0.5],
-        'wd': [0, 1e-3],
-        'lr': [0.001, 0.01],
-        'optimizer': [torch.optim.Adam, torch.optim.SGD],
-        'activation': [nn.ReLU, nn.GELU, nn.SELU, nn.Tanh, nn.Tanhshrink]
+        'wd': [1e-3, 0],
+        'lr': [0.01],
+        'optimizer': ['sgd'],
+        'activation': ['selu'],
     }
 
     SEARCH_SPACE_FLAT = [dict(zip(search_space.keys(), x)) for x in product(*search_space.values())]
@@ -170,10 +150,12 @@ while True:
             continue
 
         results.append(r)
-        print(task, len(results), r)
-        dump(results, out_path)
+        print(r[1][0][-1][1], '\n', r)
 
-    executor.stop()
-    ray.shutdown(True)
-    time.sleep(5)
-    # TODO APPNPConv Monet
+        # print(task, len(results), r)
+        # dump(results, out_path)
+
+    with suppres_all_output():
+        executor.stop()
+        ray.shutdown(True)
+        time.sleep(5)

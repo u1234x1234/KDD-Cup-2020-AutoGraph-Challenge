@@ -6,6 +6,9 @@ from ag.system_ext import suppres_all_output
 from env_utils import prepare_env
 
 
+N_TOP = 3
+
+
 class Model:
     def __init__(self):
         prepare_env()
@@ -14,14 +17,12 @@ class Model:
         ray.init(
             num_gpus=1, num_cpus=4, memory=1e10, object_store_memory=1e10,
             configure_logging=False, ignore_reinit_error=True,
-            log_to_driver=True,
+            log_to_driver=False,
             include_webui=False
         )
 
     def train_predict(self, data, time_budget, n_class, schema):
         start_time = time.time()
-
-        # Make sure imports comes after prepare_env() - pip install
         import torch
         from ag.worker_executor import Executor
         from ag.pyg_model import SEARCH_SPACE_FLAT, PYGModel, create_factory_method
@@ -32,7 +33,7 @@ class Model:
 
         base_class = create_factory_method(n_classes=n_class)
         n_edge = data.edge_index.shape[1]
-        executor = Executor(3 if n_edge < 400000 else 1, (base_class, data))
+        executor = Executor(4 if n_edge < 400000 else 1, base_class, data, gpu_per_trial=0.25)
         print('CONFIG', len(SEARCH_SPACE_FLAT))
 
         for config in SEARCH_SPACE_FLAT:
@@ -42,8 +43,7 @@ class Model:
                 y_pred, score = model.fit_predict(data)
                 return y_pred, score
 
-            name = f'{config["conv_class"].__name__} {config}'
-            executor.apply(func, name)
+            executor.apply(func, name={str(k): str(v) for k, v in config.items()})
 
         results = []
         while (len(results) != len(SEARCH_SPACE_FLAT)) and ((time.time() - start_time) < (time_budget - 4)):
@@ -53,7 +53,7 @@ class Model:
                 sresults = list(sorted(results, key=lambda x: -x[1][1]))
 
         print('\n'.join([f'{r[0]} {r[1][1]}' for r in sresults]))
-        predictions = np.array([r[1][0] for r in sresults[:2] if r[1][1] > sresults[0][1][1] - 0.02])
+        predictions = np.array([r[1][0] for r in sresults[:N_TOP] if r[1][1] > sresults[0][1][1] - 0.02])
         print(predictions.shape)
 
         from scipy.stats import gmean
@@ -68,6 +68,6 @@ class Model:
             with suppres_all_output():
                 import ray
                 ray.shutdown()
-                time.sleep(0.5)
+                time.sleep(1)
         except:
             pass
