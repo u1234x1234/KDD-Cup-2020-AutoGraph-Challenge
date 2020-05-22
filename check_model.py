@@ -3,6 +3,7 @@ import sys
 sys.path.append('/home/u1234x1234/autograph2020/src')
 from data_utils import read_dataset
 
+from uxils.profiling import Profiler
 from uxils.ray_ext import optimize_function, show_results
 from model import Model
 from sklearn.metrics import accuracy_score

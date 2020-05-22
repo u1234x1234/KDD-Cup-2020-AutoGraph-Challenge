@@ -26,9 +26,8 @@ def prepare_env():
     install_pip_package(f'zstandard')
     install_pip_package('dgl-cu100==0.4.3')
     os.environ['DGLBACKEND'] = 'pytorch'
-    install_pip_package('scipy==1.4.0')
-
     install_pip_package(f'{dn}/')
+
     dn = os.path.abspath(dn)
     sys.path.append(dn)
     return dn

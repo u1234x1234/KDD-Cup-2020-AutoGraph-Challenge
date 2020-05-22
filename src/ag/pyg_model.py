@@ -1,49 +1,18 @@
 import os
 import random
-from functools import partialmethod, partial
-from itertools import product
+from functools import partial
 
 import numpy as np
 import torch
-from torch import optim
 from dgl import DGLGraph
 from dgl.nn import pytorch as dgl_layers
+from torch import optim
 
 from torch_geometric import nn as pyg_layers
 from torch_geometric.utils import to_networkx
 
 from .graph_net import GraphNet
-
-
-def is_subclass(obj, classinfo):
-    try:
-        return issubclass(obj, classinfo)
-    except Exception:
-        pass
-    return False
-
-
-OPTIMIZERS = {
-    'sgd': optim.SGD,
-    'adam': optim.Adam,
-    'adamax': optim.Adamax,
-    'adamw': optim.AdamW,
-}
-
-
-def init_optimizer(optimizer):
-    if isinstance(optimizer, str) and optimizer.lower() in OPTIMIZERS:
-        return OPTIMIZERS[optimizer.lower()]
-    if is_subclass(optimizer, optim.Optimizer):
-        return optimizer
-    raise ValueError('No such optimizer: "{}"'.format(optimizer))
-
-
-def partialclass(cls, *args, **kwargs):
-    class NewCls(cls):
-        __init__ = partialmethod(cls.__init__, *args, **kwargs)
-    NewCls.__name__ = f'{cls.__name__}[{kwargs}]'
-    return NewCls
+from .module_utils import init_optimizer
 
 
 def bc(**kwargs):
@@ -92,27 +61,26 @@ class PYGModel:
         self.out_dropout = out_dropout
         self.lr = lr
         self.wd = wd
-        self.optimizer = optimizer
+        self.optimizer_str = optimizer
         self.activation = activation
         self.model = None
 
-    def train(self, data, g, mask):
-        if self.model is None:
-            input_size = data.x.shape[1]
-            self.model = GraphNet(
-                input_size=input_size, n_classes=self.n_classes,
-                n_layers=self.n_layers, conv_class=self.conv_class, n_hidden=self.hidden_size,
-                in_dropout=self.in_dropout, out_dropout=self.out_dropout, activation=self.activation)
+    def init_model(self, data):
+        input_size = data.x.shape[1]
+        self.model = GraphNet(
+            input_size=input_size, n_classes=self.n_classes, n_nodes=len(data.x),
+            n_layers=self.n_layers, conv_class=self.conv_class, n_hidden=self.hidden_size,
+            in_dropout=self.in_dropout, out_dropout=self.out_dropout, activation=self.activation)
+        self.model = self.model.to(self.device)
+        self.optimizer = init_optimizer(self.optimizer_str)(self.model.parameters(), lr=self.lr, weight_decay=self.wd)
+        self.criterion = torch.nn.CrossEntropyLoss()
+        # import torchcontrib
+        # self.optimizer = torchcontrib.optim.SWA(self.optimizer)
 
-            self.model = self.model.to(self.device)
-            self.optimizer = init_optimizer(self.optimizer)(self.model.parameters(), lr=self.lr, weight_decay=self.wd)
-            self.criterion = torch.nn.CrossEntropyLoss()
-            # import torchcontrib
-            # self.optimizer = torchcontrib.optim.SWA(self.optimizer)
-
+    def train(self, data, g, mask, n_iter):
         self.model.train()
         # val_accs = []
-        for epoch_idx in range(self.n_iter):
+        for epoch_idx in range(n_iter):
             self.optimizer.zero_grad()
             out = self.model(g, data)
             loss = self.criterion(out[mask], data.y[mask])
@@ -137,24 +105,41 @@ class PYGModel:
                 pred = pred[mask]
         return pred
 
-    def fit_predict(self, data):
+    def fit_predict(self, data, g):
         data = data.to(self.device)
-        g = DGLGraph(to_networkx(data))
 
         # Train + evaluate score on validation
-        self.train(data, g, mask=data.train_mask)
-        y_val_pred = self.predict(data, g, mask=data.val_mask).argmax(1)
-        score = (y_val_pred == data.y[data.val_mask]).sum().cpu().numpy() / len(y_val_pred)
+        scores = []
+        preds = []
+        for train_idx, val_idx in data.cv:
+            self.init_model(data)
 
-        # Refit on all data
-        self.n_iter = 30
-        self.train(data, g, mask=data.train_mask + data.val_mask)
-        pred = self.predict(data, g, mask=data.test_mask)
-        self.n_iter = 1
-        for i in range(5):
-            self.train(data, g, mask=data.train_mask + data.val_mask)
-            pred += self.predict(data, g, mask=data.test_mask)
-        pred /= 6
+            train_mask = torch.zeros(len(data.x), dtype=torch.bool)
+            train_mask[np.array(data.train_indices)[train_idx]] = 1
+            val_mask = torch.zeros(len(data.x), dtype=torch.bool)
+            val_mask[np.array(data.train_indices)[val_idx]] = 1
+            train_mask = train_mask.to(self.device)
+            val_mask = val_mask.to(self.device)
+
+            self.train(data, g, mask=train_mask, n_iter=self.n_iter)
+            y_val_pred = self.predict(data, g, mask=val_mask).argmax(1)
+            score = (y_val_pred == data.y[val_mask]).sum().cpu().numpy() / len(y_val_pred)
+            scores.append(score)
+
+            # self.train(data, g, mask=train_mask+val_mask, n_iter=20)
+            preds.append(torch.nn.functional.softmax(self.predict(data, g, mask=data.test_mask), dim=1))
+
+        score = np.mean(scores)
+
+        # self.train(data, g, mask=train_mask+val_mask)
+        # self.train(data, g, mask=data.train_mask + data.val_mask)
+        # pred = self.predict(data, g, mask=data.test_mask)
+        # pred = sum(preds)
+        # self.n_iter = 1
+        # for i in range(5):
+        #     self.train(data, g, mask=data.train_mask + data.val_mask)
+        #     pred += self.predict(data, g, mask=data.test_mask)
+        # pred /= 6
 
         # t_pred = self.predict(data, mask=None)
         # t_pred = F.softmax(t_pred, dim=1).cpu().numpy()
@@ -170,7 +155,7 @@ class PYGModel:
         # pred1 = self.predict(data, mask=data.test_mask).cpu().numpy()
         # pred = (pred + pred1) / 3
 
-        pred = pred.cpu().numpy()
+        pred = torch.stack(preds).cpu().numpy()
         return pred, score
 
 

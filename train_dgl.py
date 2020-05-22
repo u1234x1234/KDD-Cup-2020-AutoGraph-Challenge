@@ -4,7 +4,6 @@ from functools import partial
 from itertools import product
 
 import numpy as np
-# from torch_geometric.nn import TAGConv, SAGEConv, GraphConv, ChebConv
 import ray
 import torch
 import torch.nn as nn
@@ -29,8 +28,8 @@ from uxils.system import suppres_all_output
 
 while True:
 
-    # task = np.random.choice(['a', 'b', 'c', 'd', 'e'])
-    task = 'a'
+    task = np.random.choice(['a', 'b', 'c', 'd', 'e'])
+    # task = 'a'
     dataset, y_test = read_dataset(task)
     n_classes = dataset.get_metadata()['n_class']
     gdata = generate_pyg_data(dataset.get_data())
@@ -87,53 +86,53 @@ while True:
 
     search_space = {
         'conv_class': [
-            # partial(GraphConv, norm='both'),
-            # partial(GraphConv, norm='none'),
+            partial(dgl_layers.GraphConv, norm='both'),
+            partial(dgl_layers.GraphConv, norm='none'),
 
-            # partial(dgl_layers.TAGConv, k=1),
-            # partial(dgl_layers.TAGConv, k=3),
+            partial(dgl_layers.TAGConv, k=1),
+            partial(dgl_layers.TAGConv, k=3),
             partial(dgl_layers.TAGConv, k=4),
             # partial(pyg_layers.TAGConv, K=4, normalize=False),
-            # partial(dgl_layers.TAGConv, k=5),
+            partial(dgl_layers.TAGConv, k=5),
 
-            # partial(GATConv, num_heads=1),
+            partial(dgl_layers.GATConv, num_heads=1),
 
-            # partial(EdgeConv, batch_norm=True),
+            # partial(dgl_layers.EdgeConv, batch_norm=True),
             # partial(EdgeConv, batch_norm=False),
 
-            # partial(SAGEConv, aggregator_type='mean'),
-            # partial(SAGEConv, aggregator_type='gcn', feat_drop=0.5),
-            # partial(SAGEConv, aggregator_type='gcn'),
+            partial(dgl_layers.SAGEConv, aggregator_type='mean'),
+            partial(dgl_layers.SAGEConv, aggregator_type='gcn', feat_drop=0.5),
+            partial(dgl_layers.SAGEConv, aggregator_type='gcn'),
 
-            # partial(SGConv, k=1),
-            # partial(SGConv, k=3),
-            # partial(SGConv, k=5),
+            partial(dgl_layers.SGConv, k=1),
+            partial(dgl_layers.SGConv, k=3),
+            partial(dgl_layers.SGConv, k=5),
 
-            # partial(dgl_layers.GINConv, aggregator_type='sum'),
-            # partial(dgl_layers.GINConv, aggregator_type='mean'),
+            partial(dgl_layers.GINConv, aggregator_type='sum'),
+            partial(dgl_layers.GINConv, aggregator_type='mean'),
 
             # partial(dgl_layers.GatedGraphConv, n_steps=2, n_etypes=1),
-            # partial(dgl_layers.ChebConv, k=7),
-            # partial(dgl_layers.AGNNConv, learn_beta=True),
+            partial(dgl_layers.ChebConv, k=7),
+            partial(dgl_layers.AGNNConv, learn_beta=True),
 
             # partial(dgl_layers.APPNPConv, k=10, alpha=0.1, edge_drop=0),
             # partial(dgl_layers.APPNPConv, k=10, alpha=0.1, edge_drop=0.5),
             # partial(dgl_layers.APPNPConv, k=10, alpha=0.5, edge_drop=0),
         ],
-        'n_layers': [2],
-        'hidden_size': [64, 96],
+        'n_layers': [1, 2, 3],
+        'hidden_size': [32, 64, 96],
         'in_dropout': [0.5],
         'out_dropout': [0.5],
         'wd': [1e-3, 0],
-        'lr': [0.01],
-        'optimizer': ['sgd'],
-        'activation': ['selu'],
+        'lr': [0.01, 0.001],
+        'optimizer': available_optimizers(),
+        'activation': available_activations(),
     }
 
     SEARCH_SPACE_FLAT = [dict(zip(search_space.keys(), x)) for x in product(*search_space.values())]
     np.random.shuffle(SEARCH_SPACE_FLAT)
     print(len(SEARCH_SPACE_FLAT))
-    out_path = f'dgl_task_{task}_{uuid.uuid4()}.pkl'
+    out_path = f'dgl2_task_{task}_{uuid.uuid4()}.pkl'
 
     idx = 0
     results = []
@@ -150,10 +149,9 @@ while True:
             continue
 
         results.append(r)
-        print(r[1][0][-1][1], '\n', r)
-
-        # print(task, len(results), r)
-        # dump(results, out_path)
+        # print(r[1][0][-1][1], '\n', r)
+        print(task, len(results))
+        dump(results, out_path)
 
     with suppres_all_output():
         executor.stop()

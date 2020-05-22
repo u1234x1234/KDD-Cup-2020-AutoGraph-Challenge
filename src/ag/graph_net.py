@@ -1,52 +1,11 @@
 import torch.nn as nn
-
-from torch_geometric.data import Data
 from dgl import DGLGraph
 
+from torch_geometric.data import Data
+
+from .module_utils import init_activation
+
 WITH_EDGE_WEIGHTS = ['ChebConv', 'GCNConv', 'SAGEConv', 'GraphConv', 'TAGConv', 'ARMAConv']
-
-
-ACTIVATIONS = {
-    'tanh': nn.Tanh,
-    'tanhshrink': nn.Tanhshrink,
-    'sigmoid': nn.Sigmoid,
-    'softplus': nn.Softplus,
-    'softshrink': nn.Softshrink,
-    'softsign': nn.Softsign,
-    'celu': nn.CELU,
-    'gelu': nn.GELU,
-    'relu': nn.ReLU,
-    'relu6': nn.ReLU6,
-    'elu': nn.ELU,
-    'leakyrelu': nn.LeakyReLU,
-    'prelu': nn.PReLU,
-    'selu': nn.SELU,
-}
-
-NORMALIZATIONS = {
-    'batch': nn.BatchNorm1d,
-    'layer': nn.LayerNorm,
-}
-
-
-def is_subclass(obj, classinfo):
-    try:
-        return issubclass(obj, classinfo)
-    except Exception:
-        pass
-    return False
-
-
-def init_activation(activation):
-    if activation is None:
-        return None
-    if isinstance(activation, str) and activation.lower() in ACTIVATIONS:
-        return ACTIVATIONS[activation.lower()]()
-
-    if is_subclass(activation, nn.Module):
-        return activation()
-
-    raise ValueError('No such activation: "{}"'.format(activation))
 
 
 def _get_name(obj):
@@ -83,8 +42,14 @@ class GraphNet(nn.Module):
             |
             out
     """
-    def __init__(self, input_size, n_classes, conv_class, in_dropout, out_dropout, n_hidden, n_layers, activation):
+    def __init__(self, input_size, n_classes, n_nodes, conv_class, in_dropout, out_dropout, n_hidden, n_layers, activation):
         super().__init__()
+
+        if input_size == 1:
+            input_size = 128
+            self.emb = nn.Embedding(n_nodes, input_size)
+        else:
+            self.emb = None
 
         self.layers = nn.ModuleList()
         self.in_nn = nn.Linear(input_size, n_hidden)
@@ -108,6 +73,9 @@ class GraphNet(nn.Module):
 
     def forward(self, g: DGLGraph, data: Data):
         x = data.x
+        if self.emb is not None:
+            x = self.emb(x).squeeze()
+
         x = self.in_nn(x)
         x = self.activation(x)
         x = self.in_dropout(x)
