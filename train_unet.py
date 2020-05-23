@@ -3,8 +3,8 @@ import sys
 
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import accuracy_score
 from torch.nn import Linear, ReLU, Sequential
+from torch import nn
 
 from ag.pyg_utils import generate_pyg_data
 from data_utils import read_dataset
@@ -16,29 +16,33 @@ from torch_geometric.utils import dropout_adj
 sys.path.append('/home/u1234x1234/autograph2020/src')
 
 
-dataset, y_test = read_dataset('a')
+dataset, y_test = read_dataset(sys.argv[1])
 n_class = dataset.get_metadata()['n_class']
-schema = dataset.get_metadata()['schema']
-time_budget = dataset.get_metadata()['time_budget']
-pyg_data = generate_pyg_data(dataset.get_data())
-print(pyg_data)
+data = generate_pyg_data(dataset.get_data(), 1)
+print(data)
 
 
 class Net(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        pool_ratios = [2000 / pyg_data.num_nodes, 0.5]
-        self.unet = GraphUNet(pyg_data.num_features, 16, n_class,
+        pool_ratios = [2000 / data.num_nodes, 0.5]
+        self.unet = GraphUNet(16, 8, 16,
                               depth=1, pool_ratios=pool_ratios)
 
-    def forward(self):
-        # edge_index, _ = dropout_adj(pyg_data.edge_index, p=0.2,
-        #                             force_undirected=True,
-        #                             num_nodes=pyg_data.num_nodes,
-        #                             training=self.training)
-        # x = F.dropout(pyg_data.x, p=0.92, training=self.training)
+        in_size = data.x.shape[1]
+        self.in_nn = nn.Linear(in_size, 16)
+        self.out_nn = nn.Linear(16, n_class)
 
-        x = self.unet(pyg_data.x, pyg_data.edge_index)
+    def forward(self):
+        x = self.in_nn(data.x)
+        edge_index, _ = dropout_adj(data.edge_index, p=0.2,
+                                    force_undirected=True,
+                                    num_nodes=data.num_nodes,
+                                    training=self.training)
+        # x = F.dropout(x, p=0.5, training=self.training)
+        x = self.unet(x, edge_index)
+        # x = F.relu(x)
+        x = self.out_nn(x)
         return x
 
 
@@ -48,20 +52,18 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
 
 def train(epoch):
-    global pyg_data
+    global data
     model.train()
-
     loss_all = 0
-
-    pyg_data = pyg_data.to(device)
+    data = data.to(device)
     optimizer.zero_grad()
     output = model()
-    mask = pyg_data.train_mask + pyg_data.val_mask
-    loss = F.cross_entropy(output[mask], pyg_data.y[mask])
+    mask = data.train_mask + data.val_mask
+    loss = F.cross_entropy(output[mask], data.y[mask])
     loss.backward()
     loss_all += loss.item()
 
-    torch.nn.utils.clip_grad_norm_(model.parameters(), 0.3)
+    # torch.nn.utils.clip_grad_norm_(model.parameters(), 0.3)
 
     optimizer.step()
     return loss_all
@@ -70,7 +72,7 @@ def train(epoch):
 def test():
     model.eval()
     with torch.no_grad():
-        output = model()[pyg_data.test_mask]
+        output = model()[data.test_mask]
 
     pred = output.max(dim=1)[1].cpu().numpy()
     return pred

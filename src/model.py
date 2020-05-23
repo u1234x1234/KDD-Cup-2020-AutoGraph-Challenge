@@ -26,6 +26,7 @@ class Model:
         from ag.worker_executor import Executor
         from ag.pyg_model import SEARCH_SPACE_FLAT, PYGModel, create_factory_method
         from ag.pyg_utils import generate_pyg_data
+        from ag.krylov import train_krylov
         from dgl import DGLGraph
         import torch
 
@@ -35,9 +36,11 @@ class Model:
         print('n_edge', n_edge)
         n_cv = 1 if n_edge > 400000 else 2
         data = generate_pyg_data(data, n_cv)
+        print('EDGE WEIGHTS', data.edge_weight, data.edge_weight.mean(), data.edge_weight.sum(), data.edge_weight.max(), data.edge_weight.shape)
 
         g = DGLGraph((data.edge_index[1], data.edge_index[0]))
-        # g.add_edges(data.edge_index[1], data.edge_index[0])
+        # g.add_edges(data.edge_index[0], data.edge_index[1])
+
         print('DATAINFO', data, time_budget, n_class)
 
         base_class = create_factory_method(n_classes=n_class)
@@ -66,9 +69,9 @@ class Model:
         predictions = np.vstack([r[1][0] for r in sresults[:N_TOP] if r[1][1] > sresults[0][1][1] - 0.02])
         print(predictions.shape)
 
-        from scipy.stats import gmean
+        from scipy.stats import gmean, hmean
         # predictions = predictions.mean(axis=0)
-        predictions = gmean(predictions, axis=0)
+        predictions = np.mean(predictions, axis=0)
 
         return predictions.argmax(axis=1)
 

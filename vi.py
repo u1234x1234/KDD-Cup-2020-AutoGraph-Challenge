@@ -16,7 +16,7 @@ show_results(data, plot_results=False, n_top=40)
 
 
 data = []
-for path in glob.glob(f'dgl2_task_{name}*pkl'):
+for path in glob.glob(f'dgl3_task_{name}*pkl'):
     data += load(path)
     print(path, len(data))
 configs = []

@@ -28,14 +28,14 @@ def bc(**kwargs):
 
 
 SEARCH_SPACE_FLAT = [
-    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=700, lr=0.01, hidden_size=32, wd=0, activation='tanh', optimizer='adam'),
-    bc(conv_class=partial(pyg_layers.TAGConv, K=5), hidden_size=64, n_layers=1, n_iter=100, lr=0.001),
-    bc(conv_class=partial(pyg_layers.SGConv, K=2), hidden_size=32, n_layers=1, n_iter=100, lr=0.001),
-    bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=96, n_layers=2, n_iter=500, lr=0.01, wd=0),
-    bc(conv_class=partial(pyg_layers.GraphConv, aggr='mean'), hidden_size=64, n_layers=1, n_iter=100, lr=0.01),
-    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
-    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=32, wd=0, activation='selu', optimizer='sgd'),
-    bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='sgd'),
+    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=500, lr=0.01, hidden_size=32, wd=0, activation='tanh', optimizer='adam'),
+    bc(conv_class=partial(pyg_layers.TAGConv, K=5), hidden_size=64, n_layers=1, n_iter=70, lr=0.001),
+    bc(conv_class=partial(pyg_layers.SGConv, K=2), hidden_size=32, n_layers=1, n_iter=70, lr=0.001),
+    bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=96, n_layers=2, n_iter=350, lr=0.01, wd=0),
+    bc(conv_class=partial(pyg_layers.GraphConv, aggr='mean'), hidden_size=64, n_layers=1, n_iter=70, lr=0.01),
+    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
+    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=32, wd=0, activation='selu', optimizer='sgd'),
+    bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='sgd'),
 ]
 
 
@@ -107,6 +107,7 @@ class PYGModel:
 
     def fit_predict(self, data, g):
         data = data.to(self.device)
+        g = g.to(self.device)
 
         # Train + evaluate score on validation
         scores = []

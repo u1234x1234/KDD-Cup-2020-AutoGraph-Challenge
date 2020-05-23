@@ -25,14 +25,16 @@ from uxils.torch_ext import (available_activations, available_optimizers,
 
 from uxils.system import suppres_all_output
 
-
+t_idx = 0
+tasks = ['a', 'b', 'c', 'd', 'e']
 while True:
 
-    task = np.random.choice(['a', 'b', 'c', 'd', 'e'])
+    task = tasks[t_idx % len(tasks)]
+    t_idx += 1
     # task = 'a'
     dataset, y_test = read_dataset(task)
     n_classes = dataset.get_metadata()['n_class']
-    gdata = generate_pyg_data(dataset.get_data())
+    gdata = generate_pyg_data(dataset.get_data(), n_cv=1)
     input_size = gdata.x.shape[1]
     g = DGLGraph(to_networkx(gdata))
     # edges = g.reverse().all_edges()
@@ -48,7 +50,7 @@ while True:
 
     def func(config):
         model = GraphNet(
-            input_size=input_size, n_classes=n_classes, conv_class=config['conv_class'],
+            input_size=input_size, n_classes=n_classes, conv_class=config['conv_class'], n_nodes=len(gdata.x),
             in_dropout=config['in_dropout'], out_dropout=config['out_dropout'], n_layers=config['n_layers'],
             n_hidden=config['hidden_size'], activation=config['activation']
             ).cuda()
@@ -120,10 +122,10 @@ while True:
             # partial(dgl_layers.APPNPConv, k=10, alpha=0.5, edge_drop=0),
         ],
         'n_layers': [1, 2, 3],
-        'hidden_size': [32, 64, 96],
-        'in_dropout': [0.5],
-        'out_dropout': [0.5],
-        'wd': [1e-3, 0],
+        'hidden_size': [32, 64, 96, 128],
+        'in_dropout': [0.3, 0.5, 0.8, 0],
+        'out_dropout': [0.3, 0.5, 0.8, 0],
+        'wd': [1e-3, 0, 1e-2],
         'lr': [0.01, 0.001],
         'optimizer': available_optimizers(),
         'activation': available_activations(),
@@ -132,7 +134,7 @@ while True:
     SEARCH_SPACE_FLAT = [dict(zip(search_space.keys(), x)) for x in product(*search_space.values())]
     np.random.shuffle(SEARCH_SPACE_FLAT)
     print(len(SEARCH_SPACE_FLAT))
-    out_path = f'dgl2_task_{task}_{uuid.uuid4()}.pkl'
+    out_path = f'dgl4_task_{task}_{uuid.uuid4()}.pkl'
 
     idx = 0
     results = []

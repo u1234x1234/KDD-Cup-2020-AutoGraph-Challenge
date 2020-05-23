@@ -178,14 +178,6 @@ def func(config):
     n_class = dataset.get_metadata()['n_class']
     pyg_data = generate_pyg_data(dataset.get_data())
 
-    # import torch
-    # x = compute_nn_features(pyg_data.x.numpy(), pyg_data.edge_index.t().tolist())
-    # x = StandardScaler().fit_transform(x)
-    # x = pyg_data.x.numpy()
-    # from sklearn.decomposition import PCA
-    # x = PCA(n_components=1200, svd_solver='arpack').fit_transform(x).copy()
-    # pyg_data.x = torch.tensor(x, dtype=torch.float)
-
     input_size = pyg_data.x.size(1)
 
     model = PYGModel(
@@ -203,12 +195,6 @@ import joblib
 joblib.dump(r, 'task_a.pkl')
 
 show_results(r)
-
-
-# with Timer():
-    # y_pred = model.train_predict(dataset.get_data(), time_budget=100, n_class=n_class, schema=schema)
-# score = accuracy_score(y_test, y_pred)
-# print(score)
 
 
 # %%
