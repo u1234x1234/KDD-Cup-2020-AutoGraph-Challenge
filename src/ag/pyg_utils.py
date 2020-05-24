@@ -39,6 +39,9 @@ def generate_pyg_data(data, n_cv):
     test_indices = data['test_indices']
 
     data = Data(x=x, edge_index=edge_index, y=y, edge_weight=edge_weight)
+    # data.test_indices = test_indices
+    # data.train_indices = train_indices
+    # data.train_y = train_y
 
     cv = StratifiedShuffleSplit(n_cv, test_size=0.1)
     data.cv = list(cv.split(train_indices, y=train_y))
