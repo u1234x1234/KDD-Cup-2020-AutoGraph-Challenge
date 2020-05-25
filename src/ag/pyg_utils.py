@@ -47,16 +47,16 @@ def generate_pyg_data(data, n_cv):
     data.cv = list(cv.split(train_indices, y=train_y))
     data.train_indices = train_indices
 
-    train_indices, val_indices = train_test_split(train_indices, stratify=train_y, test_size=0.1)
+    # train_indices, val_indices = train_test_split(train_indices, stratify=train_y, test_size=0.1)
 
-    data.num_nodes = num_nodes
-    train_mask = torch.zeros(num_nodes, dtype=torch.bool)
-    train_mask[train_indices] = 1
-    data.train_mask = train_mask
+    # data.num_nodes = num_nodes
+    # train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+    # train_mask[train_indices] = 1
+    # data.train_mask = train_mask
 
-    val_mask = torch.zeros(num_nodes, dtype=torch.bool)
-    val_mask[val_indices] = 1
-    data.val_mask = val_mask
+    # val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+    # val_mask[val_indices] = 1
+    # data.val_mask = val_mask
 
     test_mask = torch.zeros(num_nodes, dtype=torch.bool)
     test_mask[test_indices] = 1

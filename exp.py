@@ -23,6 +23,14 @@ import pandas as pd
 import numpy as np
 from collections import defaultdict
 from sklearn.preprocessing import StandardScaler
+from torch_geometric import datasets
+
+
+root = '/home/u1234x1234/autograph2020/pyg_datasets'
+data = datasets.SNAPDataset(root, 'wiki-vote').data
+print(data)
+
+qwe
 
 
 dataset, y_test = read_dataset('b')

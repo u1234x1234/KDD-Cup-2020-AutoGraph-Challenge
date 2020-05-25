@@ -73,6 +73,7 @@ class GraphNet(nn.Module):
 
     def forward(self, g: DGLGraph, data: Data):
         x = data.x
+
         if self.emb is not None:
             x = self.emb(x).squeeze()
 

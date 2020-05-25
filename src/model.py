@@ -26,7 +26,6 @@ class Model:
         from ag.worker_executor import Executor
         from ag.pyg_model import SEARCH_SPACE_FLAT, PYGModel, create_factory_method
         from ag.pyg_utils import generate_pyg_data
-        from ag.krylov import train_krylov
         from dgl import DGLGraph
         import torch
 
@@ -39,14 +38,14 @@ class Model:
         print('EDGE WEIGHTS', data.edge_weight, data.edge_weight.mean(), data.edge_weight.sum(), data.edge_weight.max(), data.edge_weight.shape)
 
         g = DGLGraph((data.edge_index[1], data.edge_index[0]))
-        # g.add_edges(data.edge_index[0], data.edge_index[1])
+        # g.add_edges(data.edge_index[1], data.edge_index[0])
 
         print('DATAINFO', data, time_budget, n_class)
 
         base_class = create_factory_method(n_classes=n_class)
         executor = Executor(5 if n_edge < 400000 else 1, base_class, data, g, gpu_per_trial=0.2)
         print('CONFIG', len(SEARCH_SPACE_FLAT))
-        SEARCH_SPACE_FLAT = SEARCH_SPACE_FLAT * 2
+        SEARCH_SPACE_FLAT = SEARCH_SPACE_FLAT * 3
 
         for config in SEARCH_SPACE_FLAT:
 
@@ -70,7 +69,6 @@ class Model:
         print(predictions.shape)
 
         from scipy.stats import gmean, hmean
-        # predictions = predictions.mean(axis=0)
         predictions = np.mean(predictions, axis=0)
 
         return predictions.argmax(axis=1)

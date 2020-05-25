@@ -1,7 +1,8 @@
 import os
 import random
 from functools import partial
-
+import copy
+import time
 import numpy as np
 import torch
 from dgl import DGLGraph
@@ -27,15 +28,47 @@ def bc(**kwargs):
     return base
 
 
+# SEARCH_SPACE_FLAT = [
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=700, lr=0.01, hidden_size=64, wd=0, activation='tanh', optimizer='adam'),
+    # bc(conv_class=partial(pyg_layers.TAGConv, K=5), hidden_size=64, n_layers=1, n_iter=70, lr=0.001),
+    # bc(conv_class=partial(pyg_layers.SGConv, K=2), hidden_size=64, n_layers=1, n_iter=150, lr=0.001),
+    # bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=128, n_layers=1, n_iter=500, lr=0.001, wd=0),
+    # bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
+
+    # bc(conv_class=partial(pyg_layers.GATConv), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
+    # bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
+    # bc(conv_class=partial(dgl_layers.SAGEConv, aggregator_type='gcn', feat_drop=0.5), hidden_size=96, wd=0, n_layers=2, n_iter=700, lr=0.01, optimizer='adamw', activation='elu'),
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=3, n_iter=500, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='adamw'),
+    # bc(conv_class=partial(dgl_layers.GINConv, aggregator_type='sum'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
+    # bc(conv_class=partial(dgl_layers.SGConv, k=5), hidden_size=96, n_layers=1, n_iter=500, lr=0.01, wd=0, optimizer='adam', activation='softsign'),
+    # bc(conv_class=partial(dgl_layers.GraphConv, norm='both'), hidden_size=64, n_layers=3, n_iter=200, lr=0.01, optimizer='adamax', activation='leakyrelu'),
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=3), hidden_size=256, n_layers=1, n_iter=100, wd=0.01, lr=0.001, optimizer='adamax', activation='prelu'),
+    # bc(conv_class=partial(pyg_layers.ChebConv, K=9), hidden_size=64, n_layers=1, n_iter=500, lr=0.001),
+
+    # bc(conv_class=partial(dgl_layers.AGNNConv, learn_beta=True), hidden_size=64, n_layers=2, n_iter=200, lr=0.001),
+
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=32, wd=0, activation='selu', optimizer='sgd'),
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='sgd'),
+# ]
+
+
 SEARCH_SPACE_FLAT = [
-    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=500, lr=0.01, hidden_size=32, wd=0, activation='tanh', optimizer='adam'),
-    bc(conv_class=partial(pyg_layers.TAGConv, K=5), hidden_size=64, n_layers=1, n_iter=70, lr=0.001),
-    bc(conv_class=partial(pyg_layers.SGConv, K=2), hidden_size=32, n_layers=1, n_iter=70, lr=0.001),
-    bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=96, n_layers=2, n_iter=350, lr=0.01, wd=0),
-    bc(conv_class=partial(pyg_layers.GraphConv, aggr='mean'), hidden_size=64, n_layers=1, n_iter=70, lr=0.01),
-    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
-    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=32, wd=0, activation='selu', optimizer='sgd'),
-    bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='sgd'),
+    bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=96, n_layers=2, n_iter=500, lr=0.01, wd=0), # 1
+    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=700, lr=0.01, hidden_size=48, wd=0, activation='tanh', optimizer='adam'), # 1, 2, 3
+    bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001), # 2?, 3, 4
+    bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=2, n_iter=300, lr=0.01, wd=0, optimizer='adamw', activation='elu'), # 5, 1
+
+    bc(conv_class=partial(dgl_layers.SGConv, k=5), hidden_size=96, n_layers=1, n_iter=500, lr=0.01, wd=0, optimizer='adam', activation='softsign'), # 4?
+
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
+
+    # bc(conv_class=partial(pyg_layers.TAGConv, K=5), hidden_size=64, n_layers=1, n_iter=100, lr=0.001),
+    # bc(conv_class=partial(pyg_layers.SGConv, K=2), hidden_size=32, n_layers=1, n_iter=100, lr=0.001),
+    # bc(conv_class=partial(pyg_layers.GraphConv, aggr='mean'), hidden_size=64, n_layers=1, n_iter=100, lr=0.01),
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=32, wd=0, activation='selu', optimizer='sgd'),
+    # bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='sgd'),
 ]
 
 
@@ -74,28 +107,18 @@ class PYGModel:
         self.model = self.model.to(self.device)
         self.optimizer = init_optimizer(self.optimizer_str)(self.model.parameters(), lr=self.lr, weight_decay=self.wd)
         self.criterion = torch.nn.CrossEntropyLoss()
-        # import torchcontrib
-        # self.optimizer = torchcontrib.optim.SWA(self.optimizer)
 
     def train(self, data, g, mask, n_iter):
         self.model.train()
-        # val_accs = []
+        st = time.time()
         for epoch_idx in range(n_iter):
             self.optimizer.zero_grad()
             out = self.model(g, data)
             loss = self.criterion(out[mask], data.y[mask])
             loss.backward()
             self.optimizer.step()
-
-            # if epoch_idx > 50 and epoch_idx % 10 == 0:
-            #     p = self.predict(data, g, mask=data.val_mask).max(1)[1]
-            #     acc = (p == data.y[data.val_mask]).sum().cpu().numpy() / len(p)
-            #     val_accs.append(acc)
-            #     # if np.max(val_accs) != np.max(val_accs[-5:]):  # no impr in last steps
-                    # break
-            # if epoch_idx > 100 and epoch_idx % 10 == 0:
-                # self.optimizer.update_swa()
-        # self.optimizer.swap_swa_sgd()
+            if (time.time() - st) > 70:
+                break
 
     def predict(self, data, g, mask=None):
         self.model.eval()
@@ -127,8 +150,10 @@ class PYGModel:
             score = (y_val_pred == data.y[val_mask]).sum().cpu().numpy() / len(y_val_pred)
             scores.append(score)
 
-            # self.train(data, g, mask=train_mask+val_mask, n_iter=20)
             preds.append(torch.nn.functional.softmax(self.predict(data, g, mask=data.test_mask), dim=1))
+            # for _ in range(3):
+            #     self.train(data, g, mask=train_mask+val_mask, n_iter=5)
+            #     preds.append(torch.nn.functional.softmax(self.predict(data, g, mask=data.test_mask), dim=1))
 
         score = np.mean(scores)
 
