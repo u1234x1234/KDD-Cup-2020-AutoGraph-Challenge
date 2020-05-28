@@ -45,7 +45,7 @@ class Model:
         base_class = create_factory_method(n_classes=n_class)
         executor = Executor(5 if n_edge < 400000 else 1, base_class, data, g, gpu_per_trial=0.2)
         print('CONFIG', len(SEARCH_SPACE_FLAT))
-        SEARCH_SPACE_FLAT = SEARCH_SPACE_FLAT * 3
+        SEARCH_SPACE_FLAT = SEARCH_SPACE_FLAT * 2
 
         for config in SEARCH_SPACE_FLAT:
 
@@ -68,8 +68,8 @@ class Model:
         predictions = np.vstack([r[1][0] for r in sresults[:N_TOP] if r[1][1] > sresults[0][1][1] - 0.02])
         print(predictions.shape)
 
-        from scipy.stats import gmean, hmean
-        predictions = np.mean(predictions, axis=0)
+        from scipy.stats import gmean
+        predictions = gmean(predictions, axis=0)
 
         return predictions.argmax(axis=1)
 

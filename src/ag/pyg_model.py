@@ -28,47 +28,12 @@ def bc(**kwargs):
     return base
 
 
-# SEARCH_SPACE_FLAT = [
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=700, lr=0.01, hidden_size=64, wd=0, activation='tanh', optimizer='adam'),
-    # bc(conv_class=partial(pyg_layers.TAGConv, K=5), hidden_size=64, n_layers=1, n_iter=70, lr=0.001),
-    # bc(conv_class=partial(pyg_layers.SGConv, K=2), hidden_size=64, n_layers=1, n_iter=150, lr=0.001),
-    # bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=128, n_layers=1, n_iter=500, lr=0.001, wd=0),
-    # bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
-
-    # bc(conv_class=partial(pyg_layers.GATConv), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
-    # bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
-    # bc(conv_class=partial(dgl_layers.SAGEConv, aggregator_type='gcn', feat_drop=0.5), hidden_size=96, wd=0, n_layers=2, n_iter=700, lr=0.01, optimizer='adamw', activation='elu'),
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=3, n_iter=500, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='adamw'),
-    # bc(conv_class=partial(dgl_layers.GINConv, aggregator_type='sum'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001),
-    # bc(conv_class=partial(dgl_layers.SGConv, k=5), hidden_size=96, n_layers=1, n_iter=500, lr=0.01, wd=0, optimizer='adam', activation='softsign'),
-    # bc(conv_class=partial(dgl_layers.GraphConv, norm='both'), hidden_size=64, n_layers=3, n_iter=200, lr=0.01, optimizer='adamax', activation='leakyrelu'),
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=3), hidden_size=256, n_layers=1, n_iter=100, wd=0.01, lr=0.001, optimizer='adamax', activation='prelu'),
-    # bc(conv_class=partial(pyg_layers.ChebConv, K=9), hidden_size=64, n_layers=1, n_iter=500, lr=0.001),
-
-    # bc(conv_class=partial(dgl_layers.AGNNConv, learn_beta=True), hidden_size=64, n_layers=2, n_iter=200, lr=0.001),
-
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=500, lr=0.01, hidden_size=32, wd=0, activation='selu', optimizer='sgd'),
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=2, n_iter=500, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='sgd'),
-# ]
-
-
 SEARCH_SPACE_FLAT = [
-    bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=96, n_layers=2, n_iter=500, lr=0.01, wd=0), # 1
-    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=700, lr=0.01, hidden_size=48, wd=0, activation='tanh', optimizer='adam'), # 1, 2, 3
+    bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=1, n_iter=700, lr=0.01, hidden_size=32, wd=0, activation='tanh', optimizer='adam'), # 1, 2, 3
+    bc(conv_class=partial(pyg_layers.SAGEConv, normalize=True), hidden_size=96, n_layers=2, n_iter=300, lr=0.01, wd=0), # 1
+    bc(conv_class=partial(dgl_layers.GraphConv), hidden_size=64, n_layers=2, n_iter=300, lr=0.01, wd=0, optimizer='adamw', activation='elu'), # 5, 1
     bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=1, n_iter=200, lr=0.001), # 2?, 3, 4
-    bc(conv_class=partial(pyg_layers.GraphConv, aggr='add'), hidden_size=64, n_layers=2, n_iter=300, lr=0.01, wd=0, optimizer='adamw', activation='elu'), # 5, 1
-
     bc(conv_class=partial(dgl_layers.SGConv, k=5), hidden_size=96, n_layers=1, n_iter=500, lr=0.01, wd=0, optimizer='adam', activation='softsign'), # 4?
-
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
-
-    # bc(conv_class=partial(pyg_layers.TAGConv, K=5), hidden_size=64, n_layers=1, n_iter=100, lr=0.001),
-    # bc(conv_class=partial(pyg_layers.SGConv, K=2), hidden_size=32, n_layers=1, n_iter=100, lr=0.001),
-    # bc(conv_class=partial(pyg_layers.GraphConv, aggr='mean'), hidden_size=64, n_layers=1, n_iter=100, lr=0.01),
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=1e-3, activation='selu', optimizer='sgd'),
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=4), n_layers=2, n_iter=700, lr=0.01, hidden_size=32, wd=0, activation='selu', optimizer='sgd'),
-    # bc(conv_class=partial(dgl_layers.TAGConv, k=1), n_layers=2, n_iter=700, lr=0.01, hidden_size=64, wd=0, activation='selu', optimizer='sgd'),
 ]
 
 
