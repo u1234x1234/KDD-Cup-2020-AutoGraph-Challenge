@@ -1,3 +1,5 @@
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/u1234x1234/KDD-Cup-2020-AutoGraph-Challenge/blob/master/LICENSE)
+
 # KDD Cup 2020 AutoGraph Challenge
 
 8th place solution.
