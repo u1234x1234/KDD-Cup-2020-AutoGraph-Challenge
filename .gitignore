@@ -129,3 +129,6 @@ dmypy.json
 .pyre/
 /data
 /starting_kit
+/3rdparty
+*.pkl
+/pyg_datasets
